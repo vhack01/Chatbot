@@ -6,6 +6,8 @@ from typing import Annotated, TypedDict
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
+from tools import search_tool, calculator, tavily_search
+from langgraph.prebuilt import ToolNode, tools_condition
 
 load_dotenv()
 
@@ -15,12 +17,19 @@ model = ChatOpenAI(model_name="gpt-5.5")
 conn = sqlite3.connect(database='chat_history.db', check_same_thread = False)
 checkpointer = SqliteSaver(conn = conn)
 
+
+# tools
+tools = [calculator, tavily_search]
+model_with_tools = model.bind_tools(tools)
+tool_node = ToolNode(tools)
+
+
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 def chat(state: ChatState):
     messages = state['messages']
-    response = model.invoke(messages)
+    response = model_with_tools.invoke(messages)
     return {'messages': [response]}
 
 
@@ -28,9 +37,11 @@ def chat(state: ChatState):
 graph = StateGraph(ChatState)
 
 graph.add_node('chat', chat)
+graph.add_node('tools', tool_node)
 
 graph.add_edge(START, 'chat')
-graph.add_edge('chat', END)
+graph.add_conditional_edges('chat', tools_condition)
+graph.add_edge('tools', 'chat')
 
 
 workflow = graph.compile(checkpointer = checkpointer)
@@ -47,8 +58,6 @@ def stream(messages: str, config):
     )
     return stream_generator
     
-    # return response
-
 # test
 # response = invoke({'messages': [HumanMessage(content='Hi! My name is atul kumar')]}, {'configurable': {"thread_id" : 'thread-2'}})
 # print (response)

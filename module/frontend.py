@@ -1,5 +1,6 @@
+from langchain_core.messages import AIMessage
 import streamlit as st
-from backend import stream, retrive_all_threads, retrive_thread_message, retrive_all_conversations
+from backend import stream, retrive_all_conversations
 from langchain_core.messages import HumanMessage
 from util import generate_thread_id
 
@@ -8,9 +9,10 @@ from util import generate_thread_id
 def init():
     if "chat_history" not in st.session_state:
         st.session_state['active_thread_id'] = generate_thread_id()
-        st.session_state['chat_history'] = retrive_all_conversations()
+        st.session_state['chat_history'] = {**retrive_all_conversations(), st.session_state['active_thread_id'] : []}
 
 def load_messages(thread_id):
+    st.title('Ask me anything...')
     if thread_id:
         message_history = chat_history.get(thread_id, [])
 
@@ -51,6 +53,12 @@ with st.sidebar:
         
 
 #************ User Input ************
+
+def get_ai_message(stream_generator):
+    for chunk, metadata in stream_generator:
+        if isinstance(chunk, AIMessage) and chunk.content:
+            yield chunk.content
+
 user_input = st.chat_input("Ask something")
 
 if user_input:
@@ -62,9 +70,10 @@ if user_input:
     config = {'configurable': {'thread_id': active_thread_id}}
 
     stream_generator = stream({'messages': [HumanMessage(content=user_input)]}, config=config)
-
+    
     with st.chat_message('assistant'):
-        ai_message = st.write_stream(chunk.content for chunk, metadata in stream_generator)
+        ai_message = st.write_stream(get_ai_message(stream_generator))
         chat_history[active_thread_id].append({'role': 'assistant', "content": ai_message})
     
-        
+
+
